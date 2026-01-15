@@ -27,10 +27,12 @@ import { ComponentSetting } from "./ComponentSetting";
 import { NumberSetting } from "./NumberSetting";
 import { SelectSetting } from "./SelectSetting";
 import { SliderSetting } from "./SliderSetting";
+import { TextAreaSetting } from "./TextAreaSetting";
 import { TextSetting } from "./TextSetting";
 
 export const OptionComponentMap: Record<OptionType, ComponentType<SettingProps<any> | ComponentSettingProps<any>>> = {
     [OptionType.STRING]: TextSetting,
+    [OptionType.TEXTAREA]: TextAreaSetting,
     [OptionType.NUMBER]: NumberSetting,
     [OptionType.BIGINT]: NumberSetting,
     [OptionType.BOOLEAN]: BooleanSetting,
