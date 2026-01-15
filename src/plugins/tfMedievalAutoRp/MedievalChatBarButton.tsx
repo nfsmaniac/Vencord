@@ -16,7 +16,7 @@ import { cl } from "./utils";
 export let setShouldShowTranslateEnabledTooltip: undefined | ((show: boolean) => void);
 
 export const MedievalChatBarButton: ChatBarButtonFactory = ({ isMainChat }) => {
-    const { translationMode, showChatBarIcon, enabled, resetDefaults } = settings.use(["translationMode", "showChatBarIcon", "enabled", "resetDefaults"]);
+    const { translationMode, translationDict, showChatBarIcon, enabled, resetDefaults } = settings.use(["translationMode", "translationDict", "showChatBarIcon", "enabled", "resetDefaults"]);
 
     const [shouldShowTooltip, setShouldShowTooltip] = useState(false);
     useEffect(() => {
@@ -25,18 +25,32 @@ export const MedievalChatBarButton: ChatBarButtonFactory = ({ isMainChat }) => {
     }, []);
 
     if (!isMainChat || !showChatBarIcon || !enabled) return null;
+    let dictionaryLabel = "Medieval";
+    switch (translationDict.trim().toLowerCase()) {
+        case "autorp_patois":
+            dictionaryLabel = "Jamaican Patois";
+            break;
+        case "custom":
+            dictionaryLabel = "Custom";
+            break;
+    }
 
     // Determine icon color based on translationState
     let iconColor = "currentColor"; // Default color
     let tooltipText = "Medieval Translator Disabled";
 
+    let enablementStatus = "Disabled";
+
     if (translationMode === "forward") {
         iconColor = "var(--green-360)"; // Example green for enabled
-        tooltipText = "Medieval Translator Enabled (Forward)";
+        enablementStatus = "Enabled (Forward)";
+        // tooltipText = "Medieval Translator Enabled (Forward)";
     } else if (translationMode === "reverse") {
         iconColor = "var(--brand-360)"; // Example brand color for reverse
-        tooltipText = "Medieval Translator Enabled (Reverse)";
+        enablementStatus = "Enabled (Reverse)";
+        // tooltipText = "Medieval Translator Enabled (Reverse)";
     }
+    tooltipText = `${dictionaryLabel} Translator ${enablementStatus}`;
 
     const toggleTranslationMode = () => {
         let newMode: "disabled" | "forward" | "reverse";

@@ -12,7 +12,7 @@ import { classes } from "@utils/misc";
 import definePlugin, { OptionType } from "@utils/types";
 import { Button, React, Text, TextInput, useState } from "@webpack/common";
 
-import autorpRaw from "./Autorp";
+import autorp from "./Autorp";
 import { MedievalChatBarButton } from "./MedievalChatBarButton";
 import { MedievalIcon } from "./MedievalIcon";
 
@@ -52,6 +52,12 @@ let reversePhrases: string[] = [];
 let prefixRegexes: RegExp[] = [];
 let suffixRegexes: RegExp[] = [];
 
+// Debounce timer for custom dictionary (browser setTimeout returns number)
+let customDictReloadTimeout: number | null = null;
+
+// Dictionary version counter for preview updates
+let dictionaryVersion = 0;
+
 export const settings = definePluginSettings({
     enabled: {
         type: OptionType.BOOLEAN,
@@ -60,7 +66,6 @@ export const settings = definePluginSettings({
     },
     resetDefaults: {
         type: OptionType.COMPONENT,
-        description: "",
         component: () => (
             <Button
                 color={Button.Colors.PRIMARY}
@@ -72,12 +77,56 @@ export const settings = definePluginSettings({
                         settings.store[key] = (def as any).default;
                     });
                     settings.store.translationMode = "forward"; // workaround for chatbar icon colour status
+                    // Reset dictionary version
+                    dictionaryVersion = 0;
+                    settings.store.dictionaryVersion = 0;
+                    // Reload dictionary to apply defaults
+                    reloadDictionary();
                 }}
                 style={{ marginTop: 8 }}
             >
                 Reset to Defaults
             </Button>
         )
+    },
+    translationDict: {
+        type: OptionType.SELECT,
+        description: "Translation dictionary to use",
+        options: [
+            { label: "TF2 Medieval", value: "autorp", default: true },
+            { label: "Jamaican (Rasta/Patois)", value: "autorp_patois" },
+            { label: "Custom (paste below)", value: "custom" }
+        ],
+        onChange: () => {
+            // Clear any pending custom dictionary reload
+            if (customDictReloadTimeout !== null) {
+                clearTimeout(customDictReloadTimeout);
+                customDictReloadTimeout = null;
+            }
+            // Use setTimeout to ensure the setting has been updated before reloading
+            setTimeout(() => reloadDictionary(), 0);
+        }
+    },
+    customDictionary: {
+        type: OptionType.TEXTAREA,
+        description: "Custom dictionary (paste in the same format as autorp.txt)",
+        default: "",
+        // // Dynamic hidden property - shows only when "Custom" is selected
+        // // @ts-ignore - hidden can be a function in Vencord's settings system
+        // hidden: () => settings.store.translationDict !== "custom",
+        onChange: (newValue: string) => {
+            // Only reload if custom is selected
+            if (settings.store.translationDict === "custom") {
+                // Debounce: wait 1500ms after user stops typing to avoid excessive reloads
+                if (customDictReloadTimeout !== null) {
+                    clearTimeout(customDictReloadTimeout);
+                }
+                customDictReloadTimeout = setTimeout(() => {
+                    reloadDictionary();
+                    customDictReloadTimeout = null;
+                }, 1500);
+            }
+        }
     },
     translationMode: {
         type: OptionType.SELECT,
@@ -135,7 +184,6 @@ export const settings = definePluginSettings({
     },
     previewHeader: {
         type: OptionType.COMPONENT,
-        description: "",
         component: () => <Text variant="heading-lg/semibold" className={classes(Margins.top8)}>Preview</Text> // <Heading tag="h2">Preview</Heading>
     },
     reverseEnabled: {
@@ -146,7 +194,7 @@ export const settings = definePluginSettings({
     preview: {
         type: OptionType.COMPONENT,
         component: () => {
-            const { replacementProb, prefixProb, suffixProb, punctuationStyle, capitalisation, lowerCase, reverseEnabled, wordChoice, skipCodeBlocks, skipQuotes } = settings.use(["replacementProb", "prefixProb", "suffixProb", "punctuationStyle", "capitalisation", "lowerCase", "reverseEnabled", "wordChoice"] as const) as any;
+            const { replacementProb, prefixProb, suffixProb, punctuationStyle, capitalisation, lowerCase, reverseEnabled, wordChoice, skipCodeBlocks, skipQuotes, translationDict, customDictionary, dictionaryVersion } = settings.use(["replacementProb", "prefixProb", "suffixProb", "punctuationStyle", "capitalisation", "lowerCase", "reverseEnabled", "wordChoice", "skipCodeBlocks", "skipQuotes", "translationDict", "customDictionary", "dictionaryVersion"] as const) as any;
             const [src, setSrc] = useState("");
             const out = React.useMemo(() => {
                 try {
@@ -154,7 +202,7 @@ export const settings = definePluginSettings({
                 } catch {
                     return "";
                 }
-            }, [src, reverseEnabled, replacementProb, prefixProb, suffixProb, punctuationStyle, capitalisation, lowerCase, wordChoice, skipCodeBlocks, skipQuotes]);
+            }, [src, reverseEnabled, replacementProb, prefixProb, suffixProb, punctuationStyle, capitalisation, lowerCase, wordChoice, skipCodeBlocks, skipQuotes, translationDict, customDictionary, dictionaryVersion]);
             return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
                 React.createElement(TextInput, { placeholder: "Type text to preview", value: src, onChange: (v: any) => setSrc(v) }),
                 React.createElement(TextInput, { placeholder: "Preview output", value: out, disabled: true })
@@ -180,6 +228,13 @@ export const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Show Medieval Translator button in chatbar",
         default: true
+    },
+    // Hidden setting to track dictionary version for preview updates
+    dictionaryVersion: {
+        type: OptionType.NUMBER,
+        description: "",
+        default: 0,
+        hidden: true
     }
 });
 
@@ -958,9 +1013,52 @@ function textHasContent(s: string) {
     return Boolean(s && s.trim());
 }
 
+// --- DICTIONARY MANAGEMENT ---
+
+function reloadDictionary(): void {
+    try {
+        const dictName = settings.store.translationDict || "autorp";
+        let dictRaw: string;
+
+        if (dictName === "custom") {
+            dictRaw = settings.store.customDictionary || "";
+            if (!dictRaw.trim()) {
+                console.warn("TFMedievalAutoRp: custom dictionary is empty, using default 'autorp' dictionary");
+                dictRaw = autorp("autorp");
+            }
+        } else {
+            dictRaw = autorp(dictName);
+        }
+
+        if (dictRaw && typeof dictRaw === "string") {
+            data = parse(dictRaw);
+            // Reset reverse structures to force rebuild on next use
+            reverseMap = null;
+            reversePhrases = [];
+            prefixRegexes = [];
+            suffixRegexes = [];
+            forwardCategories = {};
+
+            // Pre-build structures immediately to ensure responsiveness
+            buildReverseStructures();
+
+            // Increment dictionary version to trigger preview updates
+            dictionaryVersion++;
+            settings.store.dictionaryVersion = dictionaryVersion;
+
+            const prefixes = Object.keys(data.prepended_words || {});
+            const suffixes = Object.keys(data.appended_words || {});
+            const replacements = data.word_replacements || [];
+            console.log(`TFMedievalAutoRp: switched to ${dictName} — prefixes=${prefixes.length} suffixes=${suffixes.length} replacements=${replacements.length}`);
+        }
+    } catch (e) {
+        console.error("TFMedievalAutoRp: failed to reload dictionary", e);
+    }
+}
+
 export default definePlugin({
     name: pluginName,
-    description: "Automatically translates your Discord chat messages into medieval English using the Team Fortress 2 'autorp.txt' dictionary. Prefixes, suffixes, and word replacements with chances and conditions are supported.",
+    description: "Automatically translates your Discord chat messages into medieval English using Team Fortress 2 dictionaries (TF2 Medieval or Jamaican Patois) or custom dictionaries. Prefixes, suffixes, and word replacements with chances and conditions are supported.",
     authors: [Devs.nfsmaniac],
     settings,
     chatBarButton: {
@@ -968,20 +1066,7 @@ export default definePlugin({
         icon: MedievalIcon
     },
     start() {
-        try {
-            if (autorpRaw && typeof autorpRaw === "string") {
-                data = parse(autorpRaw);
-                // Pre-build structures immediately to ensure responsiveness
-                buildReverseStructures();
-
-                const prefixes = Object.keys(data.prepended_words || {});
-                const suffixes = Object.keys(data.appended_words || {});
-                const replacements = data.word_replacements || [];
-                console.log("TFMedievalAutoRp: loaded data — prefixes=%d suffixes=%d replacements=%d", prefixes.length, suffixes.length, replacements.length);
-            }
-        } catch (e) {
-            console.error("TFMedievalAutoRp: failed to parse embedded 'Autorp.txt' inside Autorp.ts", e);
-        }
+        reloadDictionary();
     },
     stop() {
         data = null;
@@ -990,6 +1075,14 @@ export default definePlugin({
         prefixRegexes = [];
         suffixRegexes = [];
         forwardCategories = {};
+        // Clear any pending debounce timer
+        if (customDictReloadTimeout !== null) {
+            clearTimeout(customDictReloadTimeout);
+            customDictReloadTimeout = null;
+        }
+        // Reset dictionary version
+        dictionaryVersion = 0;
+        settings.store.dictionaryVersion = 0;
     },
 
     onBeforeMessageSend(channelId, msg) {
@@ -997,13 +1090,13 @@ export default definePlugin({
             const pluginSettings = settings.store;
             if (!data || pluginSettings?.translationMode === "disabled") { return; }
 
-            const translationMode = pluginSettings?.translationMode[0];
+            const translationMode = pluginSettings?.translationMode;
             if (typeof msg?.content === "string") {
 
-                if (translationMode === "r") {
+                if (translationMode === "reverse") {
                     msg.content = reverseTransform(msg.content.trim());
                 }
-                else {
+                else if (translationMode === "forward") {
                     msg.content = transform(msg.content.trim());
                 }
             }
