@@ -16,23 +16,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { PluginOptionSelect } from "@utils/types";
-import { React, Select, useEffect, useState } from "@webpack/common";
+import { PluginOptionTextArea } from "@utils/types";
+import { React, TextArea, useEffect, useState } from "@webpack/common";
 
 import { resolveError, SettingProps, SettingsSection } from "./Common";
 
-export function SelectSetting({ option, pluginSettings, definedSettings, onChange, id }: SettingProps<PluginOptionSelect>) {
-    const def = pluginSettings[id] ?? option.options?.find(o => o.default)?.value;
-
-    const [state, setState] = useState<any>(def ?? null);
+export function TextAreaSetting({ option, pluginSettings, definedSettings, id, onChange }: SettingProps<PluginOptionTextArea>) {
+    const [state, setState] = useState(pluginSettings[id] ?? option.default ?? null);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        const val = pluginSettings[id] ?? option.options?.find(o => o.default)?.value ?? null;
+        const val = pluginSettings[id] ?? option.default ?? null;
         setState(val);
-    }, [pluginSettings, id, option.options]);
+    }, [pluginSettings, id, option.default]);
 
-    function handleChange(newValue: any) {
+    function handleChange(newValue: string) {
         const isValid = option.isValid?.call(definedSettings, newValue) ?? true;
 
         setState(newValue);
@@ -45,15 +43,12 @@ export function SelectSetting({ option, pluginSettings, definedSettings, onChang
 
     return (
         <SettingsSection name={id} description={option.description} error={error}>
-            <Select
-                placeholder={option.placeholder ?? "Select an option"}
-                options={option.options}
-                maxVisibleItems={5}
-                closeOnSelect={true}
-                select={handleChange}
-                isSelected={v => v === state}
-                serialize={v => String(v)}
-                isDisabled={option.disabled?.call(definedSettings) ?? false}
+            <TextArea
+                type="text"
+                placeholder={option.placeholder ?? "Enter a value"}
+                value={state}
+                onChange={handleChange}
+                disabled={option.disabled?.call(definedSettings) ?? false}
                 {...option.componentProps}
             />
         </SettingsSection>

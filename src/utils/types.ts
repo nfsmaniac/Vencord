@@ -231,6 +231,7 @@ export function defineDefault<T = any>(value: T) {
 
 export const enum OptionType {
     STRING,
+    TEXTAREA,
     NUMBER,
     BIGINT,
     BOOLEAN,
@@ -250,6 +251,7 @@ export type PluginSettingDef =
     (PluginSettingCustomDef & Pick<PluginSettingCommon, "onChange">) |
     (PluginSettingComponentDef & Omit<PluginSettingCommon, "description" | "placeholder">) | ((
         | PluginSettingStringDef
+        | PluginSettingTextAreaDef
         | PluginSettingNumberDef
         | PluginSettingBooleanDef
         | PluginSettingSelectDef
@@ -295,6 +297,10 @@ export interface PluginSettingStringDef {
     default?: string;
     /** Whether to use a multiline text area */
     multiline?: boolean;
+}
+export interface PluginSettingTextAreaDef {
+    type: OptionType.TEXTAREA;
+    default?: string;
 }
 export interface PluginSettingNumberDef {
     type: OptionType.NUMBER;
@@ -363,6 +369,7 @@ export interface PluginSettingComponentDef {
 /** Maps a `PluginSettingDef` to its value type */
 type PluginSettingType<O extends PluginSettingDef> = O extends PluginSettingStringDef ? string :
     O extends PluginSettingNumberDef ? number :
+    O extends PluginSettingTextAreaDef ? string :
     O extends PluginSettingBigIntDef ? BigInt :
     O extends PluginSettingBooleanDef ? boolean :
     O extends PluginSettingSelectDef ? O["options"][number]["value"] :
@@ -425,6 +432,7 @@ export type PluginOptionsItem =
     | PluginOptionComponent
     | PluginOptionCustom;
 export type PluginOptionString = PluginSettingStringDef & PluginSettingCommon & IsDisabled & IsValid<string>;
+export type PluginOptionTextArea = PluginSettingTextAreaDef & PluginSettingCommon & IsDisabled & IsValid<string>;
 export type PluginOptionNumber = (PluginSettingNumberDef | PluginSettingBigIntDef) & PluginSettingCommon & IsDisabled & IsValid<number | BigInt>;
 export type PluginOptionBoolean = PluginSettingBooleanDef & PluginSettingCommon & IsDisabled & IsValid<boolean>;
 export type PluginOptionSelect = PluginSettingSelectDef & PluginSettingCommon & IsDisabled & IsValid<PluginSettingSelectOption>;
